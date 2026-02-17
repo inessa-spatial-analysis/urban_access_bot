@@ -1,0 +1,87 @@
+# Шаг 1. Установим curl (если ещё не установлен)
+!apt-get install curl
+
+# Шаг 2. Загрузим установочный скрипт gcloud
+!curl https://sdk.cloud.google.com | bash
+
+# Шаг 3. Активируем среду gcloud
+!exec /root/google-cloud-sdk/bin/gcloud init
+
+# Шаг 4. Настройка аутентификации
+# Проверка успешной установки
+!gcloud version
+
+# Установка библиотеки pandas
+!pip install pandas-gbq
+
+from google.colab import auth
+auth.authenticate_user()
+print('Authenticated')
+
+# Импортируем необходимые модули Python
+import pandas as pd
+from google.cloud import bigquery
+
+# Создаем клиента BigQuery
+client = bigquery.Client(project='PROJECT_ID')
+
+sql_query = """
+-- Цель: Чтобы быстрее считать количество POI в конкретном радиусе, подготовим таблицу, где для каждого гекса известны все гексы в этом радиусе.
+CREATE TABLE `PROJECT_ID.DATASET_NAME.h3_hexagon_neighbors` AS (
+WITH source_hexes AS (
+  SELECT
+    index,
+    ST_CENTROID(geometry) AS centroid
+  FROM `PROJECT_ID.DATASET_NAME.h3_10res_london_kl`
+),
+filtered_pairs AS (
+  SELECT
+    s1.index AS src_index,
+    s2.index AS dst_index,
+    ST_DISTANCE(s1.centroid, s2.centroid) AS distance_meters
+  FROM source_hexes s1
+  INNER JOIN source_hexes s2
+  ON ST_DWITHIN(s1.centroid, s2.centroid, 1200) -- фильтруем перед расчетом расстояний исходя из максимального радиуса
+  WHERE s1.index <> s2.index
+),
+-- Собираем гексы в пределах 400 метров
+neighbors_400m AS (
+  SELECT
+    src_index,
+    ARRAY_AGG(dst_index ORDER BY distance_meters ASC) AS neighbors_400m
+  FROM filtered_pairs
+  WHERE distance_meters <= 400
+  GROUP BY src_index
+),
+-- Собираем гексы в пределах 800 метров
+neighbors_800m AS (
+  SELECT
+    src_index,
+    ARRAY_AGG(dst_index ORDER BY distance_meters ASC) AS neighbors_800m
+  FROM filtered_pairs
+  WHERE distance_meters <= 800
+  GROUP BY src_index
+),
+-- Собираем гексы в пределах 1200 метров
+neighbors_1200m AS (
+  SELECT
+    src_index,
+    ARRAY_AGG(dst_index ORDER BY distance_meters ASC) AS neighbors_1200m
+  FROM filtered_pairs
+  WHERE distance_meters <= 1200
+  GROUP BY src_index
+)
+SELECT
+  n400.src_index,
+  n400.neighbors_400m,
+  n800.neighbors_800m,
+  n1200.neighbors_1200m
+FROM neighbors_400m n400
+INNER JOIN neighbors_800m n800 ON n400.src_index = n800.src_index
+INNER JOIN neighbors_1200m n1200 ON n400.src_index = n1200.src_index
+ORDER BY n400.src_index
+);
+"""
+
+df = client.query(sql_query).to_dataframe() # Получаем результат в DataFrame Pandas
+display(df)
