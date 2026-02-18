@@ -29,7 +29,7 @@ sql_query2 = """
 -- Создадим таблицу со связкой H3_id - географическая единица (boroughs).
 -- При объединении данных один и тот же гекс может находиться на пересечении сразу нескольких boroughs. В таком случае получим задублирование данных.
 -- Во избежание этого, проранжируем гексы в зависимости от численности населения borough. Возьмем то borough, в котором население меньше.
-CREATE TABLE `PROJECT_ID.DATASET_NAME.h3_boroughs` AS (
+CREATE TABLE `PROJECT_ID.DATASET_NAME.h3_borough` AS (
 WITH tmp AS (
   SELECT
   rank() over (partition by index order by population asc) as r,
