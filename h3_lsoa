@@ -1,0 +1,66 @@
+# Шаг 1. Установим curl (если ещё не установлен)
+!apt-get install curl
+
+# Шаг 2. Загрузим установочный скрипт gcloud
+!curl https://sdk.cloud.google.com | bash
+
+# Шаг 3. Активируем среду gcloud
+!exec /root/google-cloud-sdk/bin/gcloud init
+
+# Шаг 4. Настройка аутентификации
+# Проверка успешной установки
+!gcloud version
+
+# Установка библиотеки pandas
+!pip install pandas-gbq
+
+from google.colab import auth
+auth.authenticate_user()
+print('Authenticated')
+
+# Импортируем необходимые модули Python
+import pandas as pd
+from google.cloud import bigquery
+
+# Создаем клиента BigQuery
+client = bigquery.Client(project='PROJECT_ID')
+
+sql_query3 = """
+-- Создадим таблицу со связкой H3_id - географическая единица (lsoa).
+-- При объединении данных один и тот же гекс может находиться на пересечении сразу нескольких lsoa. В таком случае получим задублирование данных.
+-- Во избежание этого, проранжируем гексы в зависимости от численности населения lsoa. Возьмем то lsoa, в котором население меньше.
+CREATE TABLE `urban-access-bot.bot_geo.h3_lsoa_kl` AS (
+  WITH 
+    lsoa_population AS (
+      SELECT 
+        lsoa21nm, 
+        SUM(value_21) AS value_21
+      FROM `urban-access-bot.bot_demographics.population_by_age_groups_and_sex_by_lsoa_and_boroughs_2011_and_2021_london_datastore_kl`
+      GROUP BY lsoa21nm
+    ),
+    lsoa_boundaries_population AS (
+      SELECT
+        t1.*,
+        t2.value_21
+      FROM `urban-access-bot.bot_geo.ons_boundaries_dt` t1
+      LEFT JOIN lsoa_population t2 ON t1.lsoa21nm = t2.lsoa21nm
+    ),
+    tmp_h3_lsoa_kl AS (
+      SELECT
+        rank() over (partition by index order by value_21 asc) as r,
+        h3.*except(geometry),
+        h3.geometry AS index_geometry,
+        lsoa.*except(geometry),
+        lsoa.geometry AS lsoa_geometry
+      FROM `urban-access-bot.bot_geo.h3_10res_london_kl` h3
+      LEFT JOIN lsoa_boundaries_population lsoa ON ST_INTERSECTS(h3.geometry,lsoa.geometry)
+    )
+SELECT
+  tmp_h3_lsoa_kl.*except(r)
+FROM tmp_h3_lsoa_kl
+WHERE r = 1
+);
+"""
+
+df3 = client.query(sql_query3).to_dataframe() # Получаем результат в DataFrame Pandas
+display(d3)
