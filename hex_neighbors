@@ -27,12 +27,12 @@ client = bigquery.Client(project='PROJECT_ID')
 
 sql_query = """
 -- Цель: Чтобы быстрее считать количество POI в конкретном радиусе, подготовим таблицу, где для каждого гекса известны все гексы в этом радиусе.
-CREATE TABLE `PROJECT_ID.DATASET_NAME.h3_hexagon_neighbors` AS (
+CREATE TABLE `urban-access-bot.bot_geo.hex_neighbors_kl` AS (
 WITH source_hexes AS (
   SELECT
     index,
     ST_CENTROID(geometry) AS centroid
-  FROM `PROJECT_ID.DATASET_NAME.h3_10res_london_kl`
+  FROM `urban-access-bot.bot_geo.h3_10res_london_kl`
 ),
 filtered_pairs AS (
   SELECT
@@ -48,38 +48,41 @@ filtered_pairs AS (
 neighbors_400m AS (
   SELECT
     src_index,
-    ARRAY_AGG(dst_index ORDER BY distance_meters ASC) AS neighbors_400m
+    dst_index AS hex,
+    400 AS distance
   FROM filtered_pairs
   WHERE distance_meters <= 400
-  GROUP BY src_index
+  ORDER BY src_index
 ),
 -- Собираем гексы в пределах 800 метров
 neighbors_800m AS (
   SELECT
     src_index,
-    ARRAY_AGG(dst_index ORDER BY distance_meters ASC) AS neighbors_800m
+    dst_index AS hex,
+    800 AS distance
   FROM filtered_pairs
   WHERE distance_meters <= 800
-  GROUP BY src_index
 ),
 -- Собираем гексы в пределах 1200 метров
 neighbors_1200m AS (
   SELECT
     src_index,
-    ARRAY_AGG(dst_index ORDER BY distance_meters ASC) AS neighbors_1200m
+    dst_index AS hex,
+    1200 AS distance
   FROM filtered_pairs
   WHERE distance_meters <= 1200
-  GROUP BY src_index
 )
-SELECT
-  n400.src_index,
-  n400.neighbors_400m,
-  n800.neighbors_800m,
-  n1200.neighbors_1200m
-FROM neighbors_400m n400
-INNER JOIN neighbors_800m n800 ON n400.src_index = n800.src_index
-INNER JOIN neighbors_1200m n1200 ON n400.src_index = n1200.src_index
-ORDER BY n400.src_index
+(SELECT *
+FROM neighbors_400m
+ORDER BY src_index)
+UNION ALL
+(SELECT *
+FROM neighbors_800m
+ORDER BY src_index)
+UNION ALL
+(SELECT *
+FROM neighbors_1200m
+ORDER BY src_index)
 );
 """
 
