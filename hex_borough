@@ -1,0 +1,64 @@
+# Шаг 1. Установим curl (если ещё не установлен)
+!apt-get install curl
+
+# Шаг 2. Загрузим установочный скрипт gcloud
+!curl https://sdk.cloud.google.com | bash
+
+# Шаг 3. Активируем среду gcloud
+!exec /root/google-cloud-sdk/bin/gcloud init
+
+# Шаг 4. Настройка аутентификации
+# Проверка успешной установки
+!gcloud version
+
+# Установка библиотеки pandas
+!pip install pandas-gbq
+
+from google.colab import auth
+auth.authenticate_user()
+print('Authenticated')
+
+# Импортируем необходимые модули Python
+import pandas as pd
+from google.cloud import bigquery
+
+# Создаем клиента BigQuery
+client = bigquery.Client(project='PROJECT_ID')
+
+sql_query2 = """
+-- Создадим таблицу со связкой H3_id - географическая единица (boroughs).
+-- При объединении данных один и тот же гекс может находиться на пересечении сразу нескольких boroughs. В таком случае получим задублирование данных.
+-- Во избежание этого, проранжируем гексы в зависимости от численности населения borough. Возьмем то borough, в котором население меньше.
+CREATE TABLE `urban-access-bot.bot_geo.hex_borough_kl` AS (
+WITH intersections AS (
+  SELECT
+    h3.* EXCEPT(geometry),
+    h3.geometry AS index_geometry,
+    borough.Borough AS borough_name,
+    borough.Borough_ID AS borough_id,
+    borough.Population AS borough_population,
+    borough.geometry AS borough_geometry
+  FROM `urban-access-bot.bot_geo.h3_10res_london_kl` h3
+  INNER JOIN `urban-access-bot.bot_geo.bot_boroughs_osm_tl` borough
+    ON ST_INTERSECTS(h3.geometry, borough.geometry)
+),
+ranked_intersections AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY index ORDER BY borough_population ASC) AS rn
+  FROM intersections
+)
+SELECT
+  index,
+  index_geometry,
+  borough_name,
+  borough_id,
+  borough_population,
+  borough_geometry
+FROM ranked_intersections
+WHERE rn = 1
+);
+"""
+
+df = client.query(sql_query2).to_dataframe() # Получаем результат в DataFrame Pandas
+display(df)
