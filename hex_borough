@@ -29,24 +29,34 @@ sql_query2 = """
 -- Создадим таблицу со связкой H3_id - географическая единица (boroughs).
 -- При объединении данных один и тот же гекс может находиться на пересечении сразу нескольких boroughs. В таком случае получим задублирование данных.
 -- Во избежание этого, проранжируем гексы в зависимости от численности населения borough. Возьмем то borough, в котором население меньше.
-CREATE TABLE `PROJECT_ID.DATASET_NAME.h3_borough` AS (
-WITH tmp AS (
+CREATE TABLE `urban-access-bot.bot_geo.hex_borough_kl` AS (
+WITH intersections AS (
   SELECT
-  rank() over (partition by index order by population asc) as r,
-  h3.*except(geometry),
-  h3.geometry AS index_geometry,
-  Borough as borough,
-  Borough_ID as borough_id,
-  Population AS population,
-  borough.geometry AS borough_geometry
-FROM `PROJECT_ID.DATASET_NAME.h3_10res_london_kl` h3
-LEFT JOIN `PROJECT_ID.DATASET_NAME.bot_boroughs_osm_tl` borough
-  ON ST_INTERSECTS(h3.geometry,borough.geometry)
+    h3.* EXCEPT(geometry),
+    h3.geometry AS index_geometry,
+    borough.Borough AS borough_name,
+    borough.Borough_ID AS borough_id,
+    borough.Population AS borough_population,
+    borough.geometry AS borough_geometry
+  FROM `urban-access-bot.bot_geo.h3_10res_london_kl` h3
+  INNER JOIN `urban-access-bot.bot_geo.bot_boroughs_osm_tl` borough
+    ON ST_INTERSECTS(h3.geometry, borough.geometry)
+),
+ranked_intersections AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY index ORDER BY borough_population ASC) AS rn
+  FROM intersections
 )
-SELECT 
-  tmp.*except(r)
-FROM tmp
-WHERE r = 1
+SELECT
+  index,
+  index_geometry,
+  borough_name,
+  borough_id,
+  borough_population,
+  borough_geometry
+FROM ranked_intersections
+WHERE rn = 1
 );
 """
 
