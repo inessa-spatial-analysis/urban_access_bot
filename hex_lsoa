@@ -1,0 +1,80 @@
+# Шаг 1. Установим curl (если ещё не установлен)
+!apt-get install curl
+
+# Шаг 2. Загрузим установочный скрипт gcloud
+!curl https://sdk.cloud.google.com | bash
+
+# Шаг 3. Активируем среду gcloud
+!exec /root/google-cloud-sdk/bin/gcloud init
+
+# Шаг 4. Настройка аутентификации
+# Проверка успешной установки
+!gcloud version
+
+# Установка библиотеки pandas
+!pip install pandas-gbq
+
+from google.colab import auth
+auth.authenticate_user()
+print('Authenticated')
+
+# Импортируем необходимые модули Python
+import pandas as pd
+from google.cloud import bigquery
+
+# Создаем клиента BigQuery
+client = bigquery.Client(project='PROJECT_ID')
+
+sql_query3 = """
+-- Создадим таблицу со связкой H3_id - географическая единица (lsoa).
+-- При объединении данных один и тот же гекс может находиться на пересечении сразу нескольких lsoa. В таком случае получим задублирование данных.
+-- Во избежание этого, проранжируем гексы в зависимости от численности населения lsoa. Возьмем то lsoa, в котором население меньше.
+CREATE TABLE `urban-access-bot.bot_geo.hex_lsoa_kl` AS (
+  WITH
+    lsoa_pop AS (
+      SELECT
+        lsoa21nm,
+        SUM(value_21) AS lsoa_population21
+      FROM `urban-access-bot.bot_demographics.population_by_age_groups_and_sex_by_lsoa_and_boroughs_2011_and_2021_london_datastore_kl`
+      GROUP BY lsoa21nm
+    ),
+    lsoa_bound_pop AS (
+      SELECT
+        t1.*,
+        t2.lsoa_population21
+      FROM `urban-access-bot.bot_geo.ons_boundaries_dt` t1
+      LEFT JOIN lsoa_pop t2 ON t1.lsoa21nm = t2.lsoa21nm
+    ),
+    intersections AS (
+      SELECT
+        h3.*except(geometry),
+        h3.geometry AS index_geometry,
+        lsoa.ladnm AS lad_name,
+        lsoa.msoa21nm AS msoa_name,
+        lsoa.lsoa21nm AS lsoa_name,
+        lsoa.lsoa_population21,
+        lsoa.geometry AS lsoa_geometry
+      FROM `urban-access-bot.bot_geo.h3_10res_london_kl` h3
+      INNER JOIN lsoa_bound_pop lsoa ON ST_INTERSECTS(h3.geometry,lsoa.geometry)
+    ),
+    ranked_intersections AS (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (PARTITION BY index ORDER BY lsoa_population21 ASC) AS rn
+    FROM intersections
+    )
+SELECT
+  index,
+  index_geometry,
+  lad_name,
+  msoa_name,
+  lsoa_name,
+  lsoa_population21,
+  lsoa_geometry
+FROM ranked_intersections
+WHERE rn = 1
+);
+"""
+
+df3 = client.query(sql_query3).to_dataframe() # Получаем результат в DataFrame Pandas
+display(d3)
