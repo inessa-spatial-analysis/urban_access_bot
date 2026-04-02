@@ -1,0 +1,80 @@
+Шаг 1. Установим curl (если ещё не установлен)
+!apt-get install curl
+
+# Шаг 2. Загрузим установочный скрипт gcloud
+!curl https://sdk.cloud.google.com | bash
+
+# Шаг 3. Активируем среду gcloud
+!exec /root/google-cloud-sdk/bin/gcloud init
+
+# Шаг 4. Настройка аутентификации
+# Проверка успешной установки
+!gcloud version
+
+# Установка библиотеки pandas
+!pip install pandas-gbq
+
+from google.colab import auth
+auth.authenticate_user()
+print('Authenticated')
+
+# Импортируем необходимые модули Python
+import pandas as pd
+from google.cloud import bigquery
+
+# Создаем клиента BigQuery
+client = bigquery.Client(project='urban-access-bot')
+
+sql_query = """
+-- Произведём агрегацию данных по боро на основе данных по гексам:
+-- для каждого боро определим общее и среднее число POI по гексам в разбивке по категориям.
+CREATE TABLE `urban-access-bot.bot_dataset.pois_metrics_hex_based_by_borough` AS (
+WITH
+  joined_data AS (
+    SELECT *
+    FROM `urban-access-bot.bot_geo.hex_borough_kl` t1
+    INNER JOIN `urban-access-bot.bot_dataset.count_pois_h3` t2 ON t1.index = t2.H3_id
+  )
+SELECT
+    borough_name,
+    borough_id,
+    borough_population,
+    SUM(RESTS_count) AS sum_rests,
+    AVG(RESTS_count) AS avg_rests,
+    SUM(CLINICS_count) AS sum_clinics,
+    AVG(CLINICS_count) AS avg_clinics,
+    SUM(HOSPITALS_count) AS sum_hospitals,
+    AVG(HOSPITALS_count) AS avg_hospitals,
+    SUM(KINDERGARTEN_count) AS sum_kindergarten,
+    AVG(KINDERGARTEN_count) AS avg_kindergarten,
+    SUM(MALLS_count) AS sum_malls,
+    AVG(MALLS_count) AS avg_malls,
+    SUM(OUTPOST_count) AS sum_outpost,
+    AVG(OUTPOST_count) AS avg_outpost,    
+    SUM(PHARMACIES_count) AS sum_pharmacies,
+    AVG(PHARMACIES_count) AS avg_pharmacies,
+    SUM(PARKS_count) AS sum_parks,
+    AVG(PARKS_count) AS avg_parks,
+    SUM(POLICE_count) AS sum_police,
+    AVG(POLICE_count) AS avg_police,
+    SUM(POST_count) AS sum_post,
+    AVG(POST_count) AS avg_post,
+    SUM(SCHOOLS_count) AS sum_schools,
+    AVG(SCHOOLS_count) AS avg_schools,
+    SUM(SHOPS_count) AS sum_shops,
+    AVG(SHOPS_count) AS avg_shops,
+    SUM(SPORT_count) AS sum_sport,
+    AVG(SPORT_count) AS avg_sport,
+    SUM(BUILDINGS_count) AS sum_buildings,
+    AVG(BUILDINGS_count) AS avg_buildings
+FROM joined_data
+GROUP BY 
+    borough_name,
+    borough_id,
+    borough_population
+ORDER BY borough_id
+);
+"""
+
+df = client.query(sql_query).to_dataframe() # Получаем результат в DataFrame Pandas
+display(df)
